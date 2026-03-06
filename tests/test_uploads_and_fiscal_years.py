@@ -1,4 +1,7 @@
+import base64
+
 import httpx
+import pytest
 
 from bokio_mcp import server
 
@@ -61,6 +64,56 @@ async def test_get_upload(mock_api):
 
     assert result["id"] == UPLOAD_ID
     assert result["contentType"] == "image/png"
+
+
+# ---------------------------------------------------------------------------
+# add_upload — file_data mode validation
+# ---------------------------------------------------------------------------
+
+
+async def test_add_upload_invalid_content_type(mock_api):
+    with pytest.raises(ValueError, match="Unsupported content_type"):
+        await server.add_upload(
+            file_data=base64.b64encode(b"data").decode(),
+            filename="file.txt",
+            content_type="text/plain",
+        )
+
+
+async def test_add_upload_invalid_base64(mock_api):
+    with pytest.raises(ValueError, match="not valid base64"):
+        await server.add_upload(
+            file_data="not-valid-base64!!!",
+            filename="file.jpg",
+            content_type="image/jpeg",
+        )
+
+
+async def test_resource_store_lru_eviction(mock_api):
+    from bokio_mcp.server import _RESOURCE_STORE_MAX, _register_resource, _resource_store
+
+    _resource_store.clear()
+    for i in range(_RESOURCE_STORE_MAX + 5):
+        _register_resource(f"bokio://upload/id-{i}", b"data", "image/jpeg", f"file-{i}.jpg")
+
+    assert len(_resource_store) == _RESOURCE_STORE_MAX
+    # oldest entries should have been evicted
+    assert "bokio://upload/id-0" not in _resource_store
+    # newest entries should still be present
+    assert f"bokio://upload/id-{_RESOURCE_STORE_MAX + 4}" in _resource_store
+
+
+async def test_add_upload_file_data_success(mock_api):
+    mock_api.post(api(f"/companies/{COMPANY_ID}/uploads")).mock(
+        return_value=httpx.Response(200, json={"id": "new-upload-id"})
+    )
+    image_bytes = b"\xff\xd8\xff"  # minimal JPEG header
+    result = await server.add_upload(
+        file_data=base64.b64encode(image_bytes).decode(),
+        filename="photo.jpg",
+        content_type="image/jpeg",
+    )
+    assert result["id"] == "new-upload-id"
 
 
 # ---------------------------------------------------------------------------

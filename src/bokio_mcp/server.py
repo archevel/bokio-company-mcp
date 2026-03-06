@@ -690,7 +690,16 @@ async def add_upload(
             )
         data, content_type, filename = _resource_store[resource_uri]
     elif file_data is not None and filename is not None and content_type is not None:
-        data = base64.b64decode(file_data)
+        _allowed_content_types = {"image/jpeg", "image/png", "application/pdf"}
+        if content_type not in _allowed_content_types:
+            raise ValueError(
+                f"Unsupported content_type '{content_type}'. "
+                f"Must be one of: {', '.join(sorted(_allowed_content_types))}"
+            )
+        try:
+            data = base64.b64decode(file_data, validate=True)
+        except Exception:
+            raise ValueError("file_data is not valid base64-encoded content.")
     else:
         raise ValueError(
             "Provide one of: file_path, resource_uri, or file_data+filename+content_type."
