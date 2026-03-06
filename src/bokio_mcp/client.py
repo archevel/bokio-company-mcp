@@ -70,6 +70,3 @@ class BokioClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
-
-
-client = BokioClient()
