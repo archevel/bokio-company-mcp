@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import mimetypes
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -14,12 +15,17 @@ from .settings import settings
 
 # In-memory store for downloaded file content, keyed by resource URI.
 # Allows add_upload to read back content that was downloaded in the same session.
-_resource_store: dict[str, tuple[bytes, str, str]] = {}  # uri -> (data, content_type, filename)
+# Capped at 50 entries (LRU eviction) to prevent unbounded memory growth.
+_RESOURCE_STORE_MAX = 50
+_resource_store: OrderedDict[str, tuple[bytes, str, str]] = OrderedDict()  # uri -> (data, content_type, filename)
 
 
 def _register_resource(uri: str, data: bytes, content_type: str, filename: str) -> None:
     """Store downloaded bytes and register them as an MCP resource."""
     _resource_store[uri] = (data, content_type, filename)
+    _resource_store.move_to_end(uri)
+    while len(_resource_store) > _RESOURCE_STORE_MAX:
+        _resource_store.popitem(last=False)
     mcp.add_resource(
         FunctionResource.from_function(
             fn=lambda: data,
